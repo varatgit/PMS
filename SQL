@@ -1,0 +1,84 @@
+-- Drop tables in the correct order to avoid foreign key conflicts
+DROP TABLE IF EXISTS feedback;
+DROP TABLE IF EXISTS tasks;
+DROP TABLE IF EXISTS goals;
+DROP TABLE IF EXISTS employees;
+DROP TABLE IF EXISTS users;
+
+-- Create the users table for authentication (Managers and Employees)
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    username VARCHAR(50) NOT NULL UNIQUE,
+    password VARCHAR(255) NOT NULL, -- Storing plain text password for this example
+    role VARCHAR(20) NOT NULL CHECK (role IN ('manager', 'employee'))
+);
+
+-- Create the employees table to store employee details
+CREATE TABLE employees (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    manager_id INTEGER REFERENCES users(id),
+    name VARCHAR(100) NOT NULL,
+    email VARCHAR(100) UNIQUE
+);
+
+-- Create the goals table for manager-set goals
+CREATE TABLE goals (
+    id SERIAL PRIMARY KEY,
+    employee_id INTEGER REFERENCES employees(id) ON DELETE CASCADE,
+    manager_id INTEGER REFERENCES employees(id),
+    description TEXT NOT NULL,
+    due_date DATE NOT NULL,
+    status VARCHAR(20) NOT NULL CHECK (status IN ('Draft', 'In Progress', 'Completed', 'Cancelled')),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create the tasks table for employee-logged tasks
+CREATE TABLE tasks (
+    id SERIAL PRIMARY KEY,
+    goal_id INTEGER REFERENCES goals(id) ON DELETE CASCADE,
+    employee_id INTEGER REFERENCES employees(id) ON DELETE CASCADE,
+    description TEXT NOT NULL,
+    is_approved BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create the feedback table for manager-provided feedback
+CREATE TABLE feedback (
+    id SERIAL PRIMARY KEY,
+    goal_id INTEGER REFERENCES goals(id) ON DELETE CASCADE,
+    manager_id INTEGER REFERENCES employees(id) ON DELETE CASCADE,
+    content TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Add sample data
+
+-- Insert a manager and some employees
+INSERT INTO users (username, password, role) VALUES
+('manager_alice', 'pass123', 'manager'),
+('emp_bob', 'pass123', 'employee'),
+('emp_charlie', 'pass123', 'employee');
+
+-- Link employees to the manager
+INSERT INTO employees (user_id, manager_id, name, email) VALUES
+(1, NULL, 'Alice Manager', 'alice@company.com'),
+(2, 1, 'Bob Employee', 'bob@company.com'),
+(3, 1, 'Charlie Employee', 'charlie@company.com');
+
+-- Set goals for Bob and Charlie
+INSERT INTO goals (employee_id, manager_id, description, due_date, status) VALUES
+(2, 1, 'Complete the new feature development by Q4.', '2025-12-31', 'In Progress'),
+(2, 1, 'Lead a training session on Python best practices.', '2025-10-30', 'Draft'),
+(3, 1, 'Increase user engagement on product B by 15%.', '2025-12-15', 'In Progress');
+
+-- Bob logs some tasks for his goals
+INSERT INTO tasks (goal_id, employee_id, description, is_approved) VALUES
+(1, 2, 'Research and prototype key components.', TRUE),
+(1, 2, 'Develop the front-end user interface.', TRUE),
+(2, 2, 'Prepare training materials and slides.', FALSE);
+
+-- Manager Alice provides feedback for Bob's goals
+INSERT INTO feedback (goal_id, manager_id, content) VALUES
+(1, 1, 'Excellent progress on the feature development. Keep up the momentum on the front-end.'),
+(3, 1, 'Charlie, your goal is ambitious but achievable. Let me know if you need any resources.');
