@@ -1,0 +1,191 @@
+# backend.py
+
+import psycopg2
+import streamlit as st
+from datetime import date
+from psycopg2.errors import UniqueViolation
+
+# Database connection details
+DB_HOST = "localhost"
+DB_NAME = "PMS"
+DB_USER = "postgres"
+DB_PASS = "vardhini"
+
+def get_db_connection():
+    """Establishes a connection to the PostgreSQL database."""
+    try:
+        conn = psycopg2.connect(
+            host=DB_HOST,
+            database=DB_NAME,
+            user=DB_USER,
+            password=DB_PASS
+        )
+        return conn
+    except psycopg2.OperationalError as e:
+        st.error(f"Database connection error: {e}")
+        return None
+
+# --- User Authentication ---
+def authenticate_user(username, password):
+    conn = get_db_connection()
+    if conn is None: return None
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT u.id, u.username, u.role, e.id FROM users u JOIN employees e ON u.id = e.user_id WHERE u.username = %s AND u.password = %s;", (username, password))
+        user_data = cur.fetchone()
+        return user_data
+    except Exception as e:
+        st.error(f"Authentication error: {e}")
+        return None
+    finally:
+        if conn: conn.close()
+
+# --- Goal Management ---
+def set_goal(employee_id, manager_id, description, due_date):
+    conn = get_db_connection()
+    if conn is None: return False
+    try:
+        cur = conn.cursor()
+        cur.execute("INSERT INTO goals (employee_id, manager_id, description, due_date, status) VALUES (%s, %s, %s, %s, 'Draft');",
+                    (employee_id, manager_id, description, due_date))
+        conn.commit()
+        return True
+    except Exception as e:
+        st.error(f"Error setting goal: {e}")
+        return False
+    finally:
+        if conn: conn.close()
+
+def update_goal_status(goal_id, status):
+    conn = get_db_connection()
+    if conn is None: return False
+    try:
+        cur = conn.cursor()
+        cur.execute("UPDATE goals SET status = %s WHERE id = %s;", (status, goal_id))
+        conn.commit()
+        return True
+    except Exception as e:
+        st.error(f"Error updating goal status: {e}")
+        return False
+    finally:
+        if conn: conn.close()
+
+def get_goals_for_employee(employee_id):
+    conn = get_db_connection()
+    if conn is None: return []
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT id, description, due_date, status FROM goals WHERE employee_id = %s ORDER BY due_date ASC;", (employee_id,))
+        return cur.fetchall()
+    except Exception as e:
+        st.error(f"Error fetching goals: {e}")
+        return []
+    finally:
+        if conn: conn.close()
+
+# --- Task Management ---
+def log_task(goal_id, employee_id, description):
+    conn = get_db_connection()
+    if conn is None: return False
+    try:
+        cur = conn.cursor()
+        cur.execute("INSERT INTO tasks (goal_id, employee_id, description) VALUES (%s, %s, %s);", (goal_id, employee_id, description))
+        conn.commit()
+        return True
+    except Exception as e:
+        st.error(f"Error logging task: {e}")
+        return False
+    finally:
+        if conn: conn.close()
+
+def get_tasks_for_goal(goal_id):
+    conn = get_db_connection()
+    if conn is None: return []
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT id, description, is_approved FROM tasks WHERE goal_id = %s ORDER BY created_at DESC;", (goal_id,))
+        return cur.fetchall()
+    except Exception as e:
+        st.error(f"Error fetching tasks: {e}")
+        return []
+    finally:
+        if conn: conn.close()
+
+def approve_task(task_id):
+    conn = get_db_connection()
+    if conn is None: return False
+    try:
+        cur = conn.cursor()
+        cur.execute("UPDATE tasks SET is_approved = TRUE WHERE id = %s;", (task_id,))
+        conn.commit()
+        return True
+    except Exception as e:
+        st.error(f"Error approving task: {e}")
+        return False
+    finally:
+        if conn: conn.close()
+
+# --- Feedback & Reporting ---
+def provide_feedback(goal_id, manager_id, content):
+    conn = get_db_connection()
+    if conn is None: return False
+    try:
+        cur = conn.cursor()
+        cur.execute("INSERT INTO feedback (goal_id, manager_id, content) VALUES (%s, %s, %s);", (goal_id, manager_id, content))
+        conn.commit()
+        return True
+    except Exception as e:
+        st.error(f"Error providing feedback: {e}")
+        return False
+    finally:
+        if conn: conn.close()
+
+def get_feedback_for_goal(goal_id):
+    conn = get_db_connection()
+    if conn is None: return []
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT content, created_at FROM feedback WHERE goal_id = %s ORDER BY created_at DESC;", (goal_id,))
+        return cur.fetchall()
+    except Exception as e:
+        st.error(f"Error fetching feedback: {e}")
+        return []
+    finally:
+        if conn: conn.close()
+
+def get_employee_performance_history(employee_id):
+    conn = get_db_connection()
+    if conn is None: return []
+    try:
+        cur = conn.cursor()
+        # Query to get all goals, tasks, and feedback for an employee
+        cur.execute("""
+            SELECT
+                g.description AS goal_description, g.due_date, g.status AS goal_status,
+                t.description AS task_description, t.is_approved,
+                f.content AS feedback, f.created_at AS feedback_date
+            FROM goals g
+            LEFT JOIN tasks t ON g.id = t.goal_id
+            LEFT JOIN feedback f ON g.id = f.goal_id
+            WHERE g.employee_id = %s
+            ORDER BY g.due_date, t.created_at;
+        """, (employee_id,))
+        return cur.fetchall()
+    except Exception as e:
+        st.error(f"Error fetching performance history: {e}")
+        return []
+    finally:
+        if conn: conn.close()
+        
+def get_employees_for_manager(manager_id):
+    conn = get_db_connection()
+    if conn is None: return []
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT id, name FROM employees WHERE manager_id = %s ORDER BY name;", (manager_id,))
+        return cur.fetchall()
+    except Exception as e:
+        st.error(f"Error fetching employees for manager: {e}")
+        return []
+    finally:
+        if conn: conn.close()
